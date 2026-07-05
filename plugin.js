@@ -11,6 +11,9 @@
  * 工作流：AI 用 roche.ai.chat 回答问题时，如果需要联网，
  * 就按约定输出一个 JSON 动作块；插件解析后执行工具，把结果
  * 塞回对话，再让 AI 继续，直到给出最终答案。（手写 MCP 循环）
+ *
+ * v1.3：奶油萌系换肤 + 长期挂载（设置双写 roche.storage & localStorage，
+ *       退出后代理/挂载不再丢失）+ 移动端下滑滚动适配（safe-area / 惯性滚动）。
  */
 (function () {
   "use strict";
@@ -27,6 +30,11 @@
   const KEY_AUTOWRITE = "autoWrite"; // 是否自动把结论写回记忆
   const KEY_READER = "readerMode"; // 读页模式：raw | jina
   const KEY_SITEAUTH = "siteAuth"; // 站点鉴权：[{host, headerName, headerValue}]
+
+  // localStorage 前缀：作为 roche.storage 的“长期挂载”兜底。
+  // 有些宿主的 roche.storage 会在退出后被清掉，导致填过的代理/挂载丢失，
+  // 所以所有设置都同时写一份到 localStorage（PWA 同源持久化），读时两边都看。
+  const LS_PREFIX = "bmcp:";
 
   // ---- 记忆曲线参数（艾宾浩斯 R = e^(-t/S)）----
   const DAY_MS = 86400000;
@@ -63,6 +71,57 @@
       readerMode: "raw", // raw=直接抓HTML  jina=经 r.jina.ai 读JS渲染后的正文
       siteAuth: [], // [{host, headerName, headerValue}] 登录站点用的鉴权头
     };
+  }
+
+  // ------------------------------------------------------------
+  // 持久化：长期挂载。roche.storage + localStorage 双写，读时兜底。
+  // 解决“退出后代理/挂载设置丢失”——localStorage 在 PWA 同源下长期保留。
+  // ------------------------------------------------------------
+  function lsGet(key) {
+    try {
+      const raw = localStorage.getItem(LS_PREFIX + key);
+      if (raw == null) return undefined;
+      return JSON.parse(raw);
+    } catch (e) {
+      return undefined;
+    }
+  }
+  function lsSet(key, val) {
+    try {
+      localStorage.setItem(LS_PREFIX + key, JSON.stringify(val));
+    } catch (e) {}
+  }
+  function lsRemove(key) {
+    try {
+      localStorage.removeItem(LS_PREFIX + key);
+    } catch (e) {}
+  }
+
+  // 读设置：优先宿主 storage，宿主没有再回退 localStorage（并顺手补写回宿主）
+  async function storeGet(state, key) {
+    let v;
+    try {
+      v = await state.roche.storage.get(key);
+    } catch (e) {}
+    if (v === undefined || v === null || v === "") {
+      const ls = lsGet(key);
+      if (ls !== undefined) {
+        v = ls;
+        // 宿主里没有就补回去，尽量让两边一致
+        try {
+          await state.roche.storage.set(key, ls);
+        } catch (e) {}
+      }
+    }
+    return v;
+  }
+
+  // 写设置：两边都写，确保退出后不丢
+  async function storeSet(state, key, val) {
+    try {
+      await state.roche.storage.set(key, val);
+    } catch (e) {}
+    lsSet(key, val);
   }
 
   // ------------------------------------------------------------
@@ -823,110 +882,158 @@
   // ------------------------------------------------------------
   const CSS = `
 .roche-plugin-browser-mcp{
-  display:flex;flex-direction:column;height:100%;
-  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-  color:var(--roche-text,#e8e8ea);background:var(--roche-bg,#111214);
-  box-sizing:border-box;
+  --bm-cream:#fff8f2; --bm-cream2:#ffeef3; --bm-card:#fffdfb;
+  --bm-pink:#ff9fb8; --bm-pink-d:#ff7fa0; --bm-peach:#ffd9c2;
+  --bm-ink:#6f5d58; --bm-ink-soft:#a08e88; --bm-line:rgba(255,150,175,.22);
+  display:flex;flex-direction:column;height:100%;min-height:0;
+  font-family:"PingFang SC","Hiragino Sans GB",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--bm-ink);
+  background:linear-gradient(160deg,var(--bm-cream) 0%,var(--bm-cream2) 100%);
+  box-sizing:border-box;-webkit-tap-highlight-color:transparent;
 }
 .roche-plugin-browser-mcp *{box-sizing:border-box}
 .roche-plugin-browser-mcp .bmcp-bar{
-  display:flex;align-items:center;gap:8px;padding:12px 14px;
-  border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;
+  display:flex;align-items:center;gap:8px;
+  padding:calc(12px + env(safe-area-inset-top)) 16px 12px;flex:0 0 auto;
+  background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.25));
+  border-bottom:1px solid var(--bm-line);backdrop-filter:blur(6px);
 }
-.roche-plugin-browser-mcp .bmcp-bar h1{font-size:16px;margin:0;font-weight:600;flex:1}
+.roche-plugin-browser-mcp .bmcp-bar h1{
+  font-size:17px;margin:0;font-weight:700;flex:1;letter-spacing:.5px;
+  color:var(--bm-pink-d);
+}
+.roche-plugin-browser-mcp .bmcp-bar h1::before{content:"🌸 "}
 .roche-plugin-browser-mcp button{
-  border:none;border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer;
-  background:rgba(255,255,255,.1);color:inherit;transition:.15s;
+  border:none;border-radius:999px;padding:8px 15px;font-size:13px;cursor:pointer;
+  background:#fff;color:var(--bm-pink-d);font-weight:600;
+  box-shadow:0 2px 8px rgba(255,150,175,.18);transition:transform .12s,box-shadow .12s,background .15s;
 }
-.roche-plugin-browser-mcp button:hover{background:rgba(255,255,255,.18)}
-.roche-plugin-browser-mcp button.primary{background:#4f7cff;color:#fff}
-.roche-plugin-browser-mcp button.primary:disabled{opacity:.5;cursor:not-allowed}
-.roche-plugin-browser-mcp .bmcp-body{flex:1;overflow-y:auto;padding:14px}
+.roche-plugin-browser-mcp button:hover{background:#fff5f8;transform:translateY(-1px)}
+.roche-plugin-browser-mcp button:active{transform:scale(.95)}
+.roche-plugin-browser-mcp button.primary{
+  background:linear-gradient(135deg,var(--bm-pink) 0%,var(--bm-pink-d) 100%);
+  color:#fff;box-shadow:0 4px 14px rgba(255,127,160,.4);
+}
+.roche-plugin-browser-mcp button.primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+.roche-plugin-browser-mcp .bmcp-body{
+  flex:1;min-height:0;overflow-y:auto;padding:16px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+}
 .roche-plugin-browser-mcp .bmcp-msg{
-  margin-bottom:12px;padding:10px 12px;border-radius:12px;line-height:1.55;
-  white-space:pre-wrap;word-break:break-word;font-size:14px;
+  margin-bottom:12px;padding:11px 14px;border-radius:18px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;font-size:14px;max-width:88%;
+  box-shadow:0 2px 10px rgba(180,140,150,.1);
 }
-.roche-plugin-browser-mcp .bmcp-msg.user{background:#2a3350;align-self:flex-end}
-.roche-plugin-browser-mcp .bmcp-msg.ai{background:rgba(255,255,255,.06)}
+.roche-plugin-browser-mcp .bmcp-msg.user{
+  background:linear-gradient(135deg,var(--bm-pink) 0%,var(--bm-pink-d) 100%);
+  color:#fff;margin-left:auto;border-bottom-right-radius:6px;
+}
+.roche-plugin-browser-mcp .bmcp-msg.ai{
+  background:var(--bm-card);border:1px solid var(--bm-line);
+  border-bottom-left-radius:6px;
+}
 .roche-plugin-browser-mcp .bmcp-msg.tool{
-  background:rgba(120,200,120,.08);font-size:12px;color:#9fd39f;
-  border:1px dashed rgba(120,200,120,.3);
+  background:rgba(255,225,235,.55);font-size:12px;color:var(--bm-pink-d);
+  border:1px dashed var(--bm-pink);border-radius:14px;max-width:100%;
 }
-.roche-plugin-browser-mcp .bmcp-msg a{color:#8fb4ff}
+.roche-plugin-browser-mcp .bmcp-msg a{color:var(--bm-pink-d);font-weight:600}
 .roche-plugin-browser-mcp .bmcp-foot{
-  flex:0 0 auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08);
+  flex:0 0 auto;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--bm-line);
   display:flex;gap:8px;align-items:flex-end;
+  background:linear-gradient(0deg,rgba(255,255,255,.7),rgba(255,255,255,.2));
 }
 .roche-plugin-browser-mcp textarea{
-  flex:1;resize:none;border-radius:10px;border:1px solid rgba(255,255,255,.14);
-  background:rgba(0,0,0,.25);color:inherit;padding:10px;font-size:14px;
+  flex:1;resize:none;border-radius:18px;border:1.5px solid var(--bm-line);
+  background:#fff;color:var(--bm-ink);padding:11px 14px;font-size:14px;
   font-family:inherit;min-height:44px;max-height:120px;
+  transition:border-color .15s,box-shadow .15s;
+}
+.roche-plugin-browser-mcp textarea:focus{
+  outline:none;border-color:var(--bm-pink);box-shadow:0 0 0 3px rgba(255,159,184,.2);
 }
 .roche-plugin-browser-mcp .bmcp-settings textarea{
   width:100%;max-height:none;font-size:12px;font-family:ui-monospace,monospace;
   line-height:1.5;
 }
 .roche-plugin-browser-mcp .bmcp-settings{
-  padding:14px;display:none;border-bottom:1px solid rgba(255,255,255,.08);
+  padding:16px;display:none;border-bottom:1px solid var(--bm-line);
+  background:rgba(255,255,255,.5);overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
 }
 .roche-plugin-browser-mcp .bmcp-settings.show{display:block}
 .roche-plugin-browser-mcp .bmcp-settings label{
-  display:block;font-size:12px;opacity:.7;margin:10px 0 4px;
+  display:block;font-size:12px;color:var(--bm-ink-soft);font-weight:600;margin:12px 0 5px;
 }
 .roche-plugin-browser-mcp .bmcp-settings input,
 .roche-plugin-browser-mcp .bmcp-settings select{
-  width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.14);
-  background:rgba(0,0,0,.25);color:inherit;padding:8px;font-size:13px;
+  width:100%;border-radius:12px;border:1.5px solid var(--bm-line);
+  background:#fff;color:var(--bm-ink);padding:10px 12px;font-size:13px;
+  transition:border-color .15s,box-shadow .15s;
 }
-.roche-plugin-browser-mcp .bmcp-settings select option{background:#1a1b1e;color:#e8e8ea}
+.roche-plugin-browser-mcp .bmcp-settings input:focus,
+.roche-plugin-browser-mcp .bmcp-settings select:focus,
+.roche-plugin-browser-mcp .bmcp-settings textarea:focus{
+  outline:none;border-color:var(--bm-pink);box-shadow:0 0 0 3px rgba(255,159,184,.2);
+}
+.roche-plugin-browser-mcp .bmcp-settings select option{background:#fff;color:var(--bm-ink)}
 .roche-plugin-browser-mcp .bmcp-check{
-  display:flex;align-items:center;gap:8px;font-size:13px;opacity:.9;margin-top:10px;
+  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--bm-ink);margin-top:12px;
 }
-.roche-plugin-browser-mcp .bmcp-check input{width:auto;margin:0}
-.roche-plugin-browser-mcp .bmcp-hr{border:none;border-top:1px solid rgba(255,255,255,.1);margin:16px 0}
-.roche-plugin-browser-mcp .bmcp-hint{font-size:12px;opacity:.55;margin-top:6px;line-height:1.5}
-.roche-plugin-browser-mcp .bmcp-empty{opacity:.5;text-align:center;margin-top:40px;font-size:13px}
+.roche-plugin-browser-mcp .bmcp-check input{width:auto;margin:0;accent-color:var(--bm-pink-d)}
+.roche-plugin-browser-mcp .bmcp-hr{border:none;border-top:1px dashed var(--bm-line);margin:18px 0}
+.roche-plugin-browser-mcp .bmcp-hint{font-size:12px;color:var(--bm-ink-soft);opacity:.85;margin-top:6px;line-height:1.6}
+.roche-plugin-browser-mcp .bmcp-empty{
+  color:var(--bm-ink-soft);text-align:center;margin-top:48px;font-size:14px;line-height:1.9;
+}
+.roche-plugin-browser-mcp .bmcp-empty::before{content:"🐰\A";white-space:pre;font-size:36px}
 
 /* 记忆管理 App */
 .roche-plugin-browser-mcp .bmem-topbar{
-  display:flex;gap:8px;align-items:center;padding:10px 14px;
-  border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;flex-wrap:wrap;
+  display:flex;gap:8px;align-items:center;padding:12px 16px;
+  border-bottom:1px solid var(--bm-line);flex:0 0 auto;flex-wrap:wrap;
+  background:rgba(255,255,255,.5);
 }
 .roche-plugin-browser-mcp .bmem-topbar select{
-  flex:1;min-width:140px;border-radius:8px;border:1px solid rgba(255,255,255,.14);
-  background:rgba(0,0,0,.25);color:inherit;padding:7px;font-size:13px;
+  flex:1;min-width:140px;border-radius:12px;border:1.5px solid var(--bm-line);
+  background:#fff;color:var(--bm-ink);padding:9px 12px;font-size:13px;
 }
-.roche-plugin-browser-mcp .bmem-topbar select option{background:#1a1b1e;color:#e8e8ea}
+.roche-plugin-browser-mcp .bmem-topbar select option{background:#fff;color:var(--bm-ink)}
 .roche-plugin-browser-mcp .bmem-stat{
-  padding:8px 14px;font-size:12px;opacity:.7;flex:0 0 auto;
-  border-bottom:1px solid rgba(255,255,255,.06);
+  padding:10px 16px;font-size:12px;color:var(--bm-ink-soft);flex:0 0 auto;
+  border-bottom:1px solid var(--bm-line);background:rgba(255,255,255,.3);
 }
-.roche-plugin-browser-mcp .bmem-list{flex:1;overflow-y:auto;padding:10px 14px}
+.roche-plugin-browser-mcp .bmem-list{
+  flex:1;min-height:0;overflow-y:auto;padding:12px 16px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+}
 .roche-plugin-browser-mcp .bmem-item{
-  border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;
-  margin-bottom:10px;background:rgba(255,255,255,.03);
+  border:1px solid var(--bm-line);border-radius:16px;padding:13px 14px;
+  margin-bottom:12px;background:var(--bm-card);
+  box-shadow:0 2px 10px rgba(180,140,150,.08);
 }
-.roche-plugin-browser-mcp .bmem-item .txt{font-size:14px;line-height:1.5;margin-bottom:8px;word-break:break-word}
+.roche-plugin-browser-mcp .bmem-item .txt{font-size:14px;line-height:1.6;margin-bottom:10px;word-break:break-word}
 .roche-plugin-browser-mcp .bmem-meter{
-  height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;margin-bottom:8px;
+  height:8px;border-radius:99px;background:rgba(255,159,184,.15);overflow:hidden;margin-bottom:10px;
 }
-.roche-plugin-browser-mcp .bmem-meter i{display:block;height:100%;border-radius:3px;transition:width .3s}
-.roche-plugin-browser-mcp .bmem-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;opacity:.75}
+.roche-plugin-browser-mcp .bmem-meter i{display:block;height:100%;border-radius:99px;transition:width .4s ease}
+.roche-plugin-browser-mcp .bmem-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--bm-ink-soft)}
 .roche-plugin-browser-mcp .bmem-row .grow{flex:1}
-.roche-plugin-browser-mcp .bmem-item button{padding:5px 9px;font-size:12px;border-radius:8px}
+.roche-plugin-browser-mcp .bmem-item button{padding:6px 11px;font-size:12px;border-radius:99px}
 .roche-plugin-browser-mcp .bmem-pill{
-  font-size:11px;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.1);
+  font-size:11px;padding:3px 9px;border-radius:99px;background:rgba(255,159,184,.15);
+  color:var(--bm-pink-d);font-weight:600;
 }
-.roche-plugin-browser-mcp .bmem-pill.pinned{background:rgba(255,200,80,.2);color:#ffd980}
-.roche-plugin-browser-mcp .bmem-pill.imp1{background:rgba(150,150,150,.18);color:#bbb}
-.roche-plugin-browser-mcp .bmem-pill.imp2{background:rgba(120,160,220,.18);color:#9fc0ff}
-.roche-plugin-browser-mcp .bmem-pill.imp3{background:rgba(230,160,90,.2);color:#f0b878}
-.roche-plugin-browser-mcp .bmem-pill.imp4{background:rgba(230,100,120,.22);color:#ff9aae}
+.roche-plugin-browser-mcp .bmem-pill.pinned{background:rgba(255,190,90,.25);color:#e59500}
+.roche-plugin-browser-mcp .bmem-pill.imp1{background:rgba(180,170,165,.22);color:#9a8d88}
+.roche-plugin-browser-mcp .bmem-pill.imp2{background:rgba(140,190,230,.22);color:#4d94c9}
+.roche-plugin-browser-mcp .bmem-pill.imp3{background:rgba(255,180,110,.25);color:#e08a2e}
+.roche-plugin-browser-mcp .bmem-pill.imp4{background:rgba(255,130,160,.25);color:#e0567f}
 .roche-plugin-browser-mcp .bmem-imp{
-  border-radius:8px;border:1px solid rgba(255,255,255,.14);
-  background:rgba(0,0,0,.25);color:inherit;font-size:12px;padding:4px 6px;
+  border-radius:10px;border:1.5px solid var(--bm-line);
+  background:#fff;color:var(--bm-ink);font-size:12px;padding:5px 8px;
 }
-.roche-plugin-browser-mcp .bmem-imp option{background:#1a1b1e;color:#e8e8ea}
+.roche-plugin-browser-mcp .bmem-imp option{background:#fff;color:var(--bm-ink)}
 `;
 
   function injectStyle() {
@@ -1060,15 +1167,15 @@
       state.readerMode = readerSelect.value === "jina" ? "jina" : "raw";
       state.siteAuth = parseSiteAuth(siteAuthArea.value);
 
-      await state.roche.storage.set(KEY_PROXY, state.proxyUrl);
-      await state.roche.storage.set(KEY_SEARCH, state.searchProxyUrl);
-      await state.roche.storage.set(KEY_MAXSTEPS, state.maxSteps);
-      await state.roche.storage.set(KEY_CONVO, state.mountedConvId);
-      await state.roche.storage.set(KEY_AUTOWRITE, state.autoWrite);
-      await state.roche.storage.set(KEY_READER, state.readerMode);
-      await state.roche.storage.set(KEY_SITEAUTH, state.siteAuth);
+      await storeSet(state, KEY_PROXY, state.proxyUrl);
+      await storeSet(state, KEY_SEARCH, state.searchProxyUrl);
+      await storeSet(state, KEY_MAXSTEPS, state.maxSteps);
+      await storeSet(state, KEY_CONVO, state.mountedConvId);
+      await storeSet(state, KEY_AUTOWRITE, state.autoWrite);
+      await storeSet(state, KEY_READER, state.readerMode);
+      await storeSet(state, KEY_SITEAUTH, state.siteAuth);
       updateRememberBtn();
-      state.roche.ui.toast("设置已保存");
+      state.roche.ui.toast("设置已长期保存（退出也不会丢）");
       settingsPane.classList.remove("show");
     };
 
@@ -1207,10 +1314,10 @@
   // 记忆管理 App 的 UI
   // ------------------------------------------------------------
   function retentionColor(r) {
-    // 绿→黄→红
-    if (r >= 0.66) return "#5fd38a";
-    if (r >= 0.33) return "#e8c15f";
-    return "#e07a7a";
+    // 薄荷绿 → 蜜桃黄 → 樱花粉（配合奶油萌系配色）
+    if (r >= 0.66) return "#7fd6a6";
+    if (r >= 0.33) return "#ffcf7a";
+    return "#ff9fb8";
   }
 
   function fmtAge(ms) {
@@ -1457,7 +1564,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "浏览器 MCP",
-    version: "1.2.0",
+    version: "1.3.0",
     apps: [
       {
         id: APP_ID,
@@ -1472,22 +1579,22 @@
 
           injectStyle();
 
-          // 读取已保存设置
+          // 读取已保存设置（storage + localStorage 双读兜底，长期挂载）
           try {
-            state.proxyUrl = (await roche.storage.get(KEY_PROXY)) || "";
+            state.proxyUrl = (await storeGet(state, KEY_PROXY)) || "";
             state.searchProxyUrl =
-              (await roche.storage.get(KEY_SEARCH)) || "";
-            const s = await roche.storage.get(KEY_MAXSTEPS);
+              (await storeGet(state, KEY_SEARCH)) || "";
+            const s = await storeGet(state, KEY_MAXSTEPS);
             if (s) state.maxSteps = s;
             state.mountedConvId =
-              (await roche.storage.get(KEY_CONVO)) || "";
-            state.autoWrite = !!(await roche.storage.get(KEY_AUTOWRITE));
+              (await storeGet(state, KEY_CONVO)) || "";
+            state.autoWrite = !!(await storeGet(state, KEY_AUTOWRITE));
             state.readerMode =
-              (await roche.storage.get(KEY_READER)) === "jina"
+              (await storeGet(state, KEY_READER)) === "jina"
                 ? "jina"
                 : "raw";
             state.siteAuth =
-              (await roche.storage.get(KEY_SITEAUTH)) || [];
+              (await storeGet(state, KEY_SITEAUTH)) || [];
           } catch (e) {}
 
           // 拉取会话列表（用于挂载角色/记忆），失败不阻塞
@@ -1529,7 +1636,7 @@
 
           try {
             state.mountedConvId =
-              (await roche.storage.get(KEY_CONVO)) || "";
+              (await storeGet(state, KEY_CONVO)) || "";
           } catch (e) {}
           try {
             if (roche.conversation && roche.conversation.list) {

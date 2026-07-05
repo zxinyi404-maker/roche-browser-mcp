@@ -1,7 +1,7 @@
 {
   "id": "browser-mcp",
   "name": "浏览器 MCP",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "给 Roche AI 装上真实的浏览器能力：联网搜索 + 打开网页读取正文，并可挂载角色人设与会话记忆，让联网结果和角色记忆互通。AI 自己决定何时联网，读完再回答，还能把结论写回角色记忆。需要配合 CORS 代理使用。",
   "author": "zxinyi404-maker",
   "entry": "https://raw.githubusercontent.com/zxinyi404-maker/roche-browser-mcp/main/plugin.js",

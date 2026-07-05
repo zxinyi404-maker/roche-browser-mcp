@@ -136,6 +136,12 @@ https://raw.githubusercontent.com/用户名/仓库名/main/manifest.json
 
 这些都是插件私有数据，**卸载插件时 Roche 会自动清理**，不碰主 IndexedDB 结构。
 
+### 长期挂载（v1.3）——设置退出后不再丢
+
+之前有个坑：某些宿主环境里 `roche.storage` 会在你退出 App 后被清掉，导致辛辛苦苦填的 **CORS 代理地址、挂载的角色** 又没了，每次进来都要重填。
+
+v1.3 起，所有设置（代理地址、搜索代理、步数、挂载会话、自动写回、读页模式、站点鉴权）都会**同时写两份**：一份进宿主 `roche.storage`，一份进浏览器 `localStorage`（key 前缀 `bmcp:`）。读取时优先读宿主，宿主里没有就自动回退 `localStorage` 并补写回去。localStorage 在 PWA 同源下是长期保留的，所以只要你不手动清浏览器数据，**填一次就长期有效**。（卸载插件时 localStorage 那份不会被 Roche 自动清，介意可手动清浏览器站点数据。）
+
 注意：记忆**正文**写在 Roche 主事实记忆里（通过 `roche.memory.write`），这份**不随插件卸载删除**；插件只在自己的 storage 里存记忆的「强度/时间」等元数据。「遗忘」和「遗忘扫描」会调用 `roche.memory.delete` 真正删除主记忆，不可恢复。
 
 ## 6. 风险提示和注意事项
