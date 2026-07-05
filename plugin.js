@@ -902,7 +902,6 @@
   font-size:17px;margin:0;font-weight:700;flex:1;letter-spacing:.5px;
   color:var(--bm-pink-d);
 }
-.roche-plugin-browser-mcp .bmcp-bar h1::before{content:"🌸 "}
 .roche-plugin-browser-mcp button{
   border:none;border-radius:999px;padding:8px 15px;font-size:13px;cursor:pointer;
   background:#fff;color:var(--bm-pink-d);font-weight:600;
@@ -965,22 +964,37 @@
 .roche-plugin-browser-mcp .bmcp-settings label{
   display:block;font-size:12px;color:var(--bm-ink-soft);font-weight:600;margin:12px 0 5px;
 }
-.roche-plugin-browser-mcp .bmcp-settings input,
+.roche-plugin-browser-mcp .bmcp-settings input:not([type=checkbox]),
 .roche-plugin-browser-mcp .bmcp-settings select{
   width:100%;border-radius:12px;border:1.5px solid var(--bm-line);
   background:#fff;color:var(--bm-ink);padding:10px 12px;font-size:13px;
   transition:border-color .15s,box-shadow .15s;
 }
-.roche-plugin-browser-mcp .bmcp-settings input:focus,
+.roche-plugin-browser-mcp .bmcp-settings input:not([type=checkbox]):focus,
 .roche-plugin-browser-mcp .bmcp-settings select:focus,
 .roche-plugin-browser-mcp .bmcp-settings textarea:focus{
   outline:none;border-color:var(--bm-pink);box-shadow:0 0 0 3px rgba(255,159,184,.2);
 }
 .roche-plugin-browser-mcp .bmcp-settings select option{background:#fff;color:var(--bm-ink)}
 .roche-plugin-browser-mcp .bmcp-check{
-  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--bm-ink);margin-top:12px;
+  display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--bm-ink);
+  margin-top:14px;line-height:1.5;cursor:pointer;
+  background:rgba(255,255,255,.6);border:1.5px solid var(--bm-line);
+  border-radius:14px;padding:12px 14px;
 }
-.roche-plugin-browser-mcp .bmcp-check input{width:auto;margin:0;accent-color:var(--bm-pink-d)}
+.roche-plugin-browser-mcp .bmcp-check input[type=checkbox]{
+  -webkit-appearance:none;appearance:none;flex:0 0 auto;margin:0;
+  width:22px;height:22px;border-radius:7px;border:2px solid var(--bm-pink);
+  background:#fff;cursor:pointer;position:relative;transition:.15s;
+}
+.roche-plugin-browser-mcp .bmcp-check input[type=checkbox]:checked{
+  background:linear-gradient(135deg,var(--bm-pink) 0%,var(--bm-pink-d) 100%);
+  border-color:var(--bm-pink-d);
+}
+.roche-plugin-browser-mcp .bmcp-check input[type=checkbox]:checked::after{
+  content:"";position:absolute;left:6px;top:2px;width:6px;height:11px;
+  border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(43deg);
+}
 .roche-plugin-browser-mcp .bmcp-hr{border:none;border-top:1px dashed var(--bm-line);margin:18px 0}
 .roche-plugin-browser-mcp .bmcp-hint{font-size:12px;color:var(--bm-ink-soft);opacity:.85;margin-top:6px;line-height:1.6}
 .roche-plugin-browser-mcp .bmcp-empty{
@@ -1564,7 +1578,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "浏览器 MCP",
-    version: "1.3.0",
+    version: "1.3.1",
     apps: [
       {
         id: APP_ID,
